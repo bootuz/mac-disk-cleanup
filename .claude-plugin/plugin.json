@@ -1,0 +1,22 @@
+{
+  "name": "mac-disk-cleanup",
+  "description": "Free up disk space on a Mac safely: a fast read-only survey, a proposal with sizes and consequences, cleanup of only what you pick, and a before/after report.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Astemir Boziev",
+    "url": "https://github.com/bootuz"
+  },
+  "homepage": "https://github.com/bootuz/mac-disk-cleanup",
+  "repository": "https://github.com/bootuz/mac-disk-cleanup",
+  "license": "MIT",
+  "keywords": [
+    "macos",
+    "disk-space",
+    "storage",
+    "cleanup",
+    "xcode",
+    "simulators",
+    "derived-data",
+    "caches"
+  ]
+}
