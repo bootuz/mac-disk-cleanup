@@ -32,7 +32,7 @@ bash <this skill's folder>/scripts/survey.sh
 
 Run it in the background if your shell times out sooner, and tell the user in a line what you're doing while it runs.
 
-It measures a fixed list of known hotspots in parallel. Then it lists the details you need to judge them: simulator runtimes with their last-used dates, simulator devices, DerivedData per project, device support folders, Android emulators, project build folders, big files, and apps with their last-opened dates.
+It measures a fixed list of known hotspots in parallel, including the macOS per-user temp and cache folders in `/private/var/folders`. Then it lists the details you need to judge them: Instruments working data left by killed recordings, simulator runtimes with their last-used dates, simulator devices, DerivedData per project, device support folders, Android emulators, project build folders, big files, and apps with their last-opened dates.
 
 Don't replace it with `du -sh ~/*` or `du` over `~/Library`. On a real Mac that takes over 10 minutes, and it overcounts. Online-only files in `~/Library/CloudStorage` and iCloud Drive get counted, and mounted simulator images under `/Library/Developer/CoreSimulator/Volumes` duplicate the runtimes. One run reported `~/Library` at 720 GB on a 494 GB disk. If the script's totals don't explain where the space went, drill into one folder at a time: `du -skx <folder>/* | sort -rn | head`.
 
@@ -40,7 +40,8 @@ How to read the output:
 - **`[no access]`** means macOS privacy protection blocked the read. This happens for Mail, Messages, the Photos library, iPhone backups, the Trash and some app containers. It does not mean empty. Say you couldn't see inside, and point to where the user can look: System Settings → General → Storage, or Finder → their iPhone → Manage Backups.
 - **`[partial]`** means the size is a lower bound.
 - **"last opened unknown"** for an app means Spotlight has no date. It doesn't mean the app was never opened.
-- **"Running now"** lists Xcode, booted simulators, Android emulators and Docker. Whatever those are using is off limits for this cleanup.
+- **"Running now"** lists Xcode, booted simulators, Android emulators, Docker and Instruments recordings (`xctrace`). Whatever those are using is off limits for this cleanup.
+- **"macOS swap in use"** is space macOS takes when memory runs short, often 10–20 GB with Xcode and several simulators open. Never delete it. It shrinks after the user quits memory-heavy apps, so say that when space is tight.
 - **A size bigger than makes sense means APFS clones.** `du` and Finder count cloned data once per copy, so a folder of clones can claim more than the whole disk. Common cases:
   - Xcode's parallel-testing clones (the script reports how many there are rather than a size),
   - Chrome's `code_sign_clone` folders in `/private/var/folders`,
@@ -66,10 +67,14 @@ Judge each candidate by three things: how big it is, when it was last used, and 
 - **Parallel-testing clones** (`~/Library/Developer/XCTestDevices`). Xcode makes copies of a simulator to run tests in parallel and often leaves them behind, sometimes with dozens of empty folders.
   - They're always safe to remove when no tests are running, because Xcode makes new ones when it needs them.
   - Present them as "shows as N GB in Finder, really a few GB", not as the biggest win.
+  - `simctl delete` hands the deletion to a background process: the devices move to `Deleting-*` folders in the user temp folder and empty out over time. So free space can rise later rather than right away; say so instead of reporting that nothing was freed. Leave those `Deleting-*` folders alone.
 - **SwiftUI preview simulators** (`~/Library/Developer/Xcode/UserData/Previews`, often 5–10 GB). Safe to remove; the next preview takes longer to start. Ask the user to close any open preview canvas first.
 - **Claude Code scratch folders** (`/private/tmp/claude-<uid>/<project>/<session>`). These hold a session's working files, such as build copies and test output, and can reach tens of GB.
   - If the script marks one as changed in the last hour, a session is using it. Leave it alone, and never touch the scratch folder of the session you're running in.
   - Older ones can go. macOS also empties `/tmp` on restart.
+- **Instruments (`xctrace`) working data.** Each recording works in `/private/var/folders/<…>/C/com.apple.dt.InstrumentsCLI/path_manager/xrtmp__<pid>.*`, and Instruments records into `instruments*.ktrace` in the user temp folder. A recording that is killed, often because the disk filled up, leaves this behind: one run left 35 GB, and leftovers once filled a disk completely.
+  - The script marks each item as a leftover or in use. Leftovers are safe to delete; saved `.trace` documents elsewhere aren't affected.
+  - Leave anything in use. The `.ktrace` files Xcode still holds go away when Xcode quits.
 - **Xcode's coding assistant** (`CodingAssistant`) holds model data. Mention it, but leave it unless the user says they don't use the feature.
 - **DerivedData.** Always safe to delete. The only cost is a slower first build and a re-index. The script shows one folder per project; several folders for one project usually come from different checkouts or worktrees. If Xcode is open, it immediately recreates the folder for the open project. That's harmless; just expect a little to come back.
 - **Device support** (`iOS DeviceSupport`, about 5–7 GB per iOS version). These are debug symbols copied from a connected device. Keep the newest folder for each device model. The others come back automatically if that device connects again on that iOS version.
@@ -126,6 +131,7 @@ First, check "Running now" again. Don't delete a runtime that a booted simulator
 | Parallel-testing clones | `xcrun simctl --set testing delete all`, then `rm -rf ~/Library/Developer/XCTestDevices/*` for the empty leftovers |
 | SwiftUI preview simulators | `xcrun simctl --set previews delete all` |
 | Old Claude Code scratch folders | `rm -rf <session folder>`, only for folders not changed recently |
+| Instruments leftovers | `rm -rf <xrtmp__ folder or .ktrace file>`, only for items the script marks as leftovers |
 | DerivedData | `rm -rf ~/Library/Developer/Xcode/DerivedData/<folder>` |
 | Device support | `rm -rf "<folder>"` |
 | Archives, emulators, downloads, apps | `/usr/bin/trash <paths>` |

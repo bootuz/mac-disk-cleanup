@@ -61,12 +61,15 @@ section "Disk (data volume, same numbers as Finder)"
 df -k /System/Volumes/Data | awk 'NR == 2 { printf "total %.0f GB, free %.0f GB\n", $2 * 1024 / 1e9, $4 * 1024 / 1e9 }'
 snaps=$(tmutil listlocalsnapshots / 2>/dev/null | grep -c com.apple)
 [ "$snaps" -gt 0 ] && echo "Time Machine local snapshots: $snaps (macOS frees these by itself when space runs low)"
+swap=$(sysctl -n vm.swapusage 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "used") { v = $(i + 2); sub(/M$/, "", v); if (v * 1048576 >= 1e9) printf "%.1f", v * 1048576 / 1e9 } }')
+[ -n "$swap" ] && echo "macOS swap in use: $swap GB (shrinks after you quit memory-heavy apps such as Xcode and simulators)"
 
 section "Running now (don't remove what these are using)"
 pgrep -xq Xcode && echo "Xcode is open"
 [ $has_simctl = 1 ] && xcrun simctl list devices booted 2>/dev/null | grep Booted | sed 's/^ */Booted simulator: /'
 pgrep -f qemu-system >/dev/null && echo "An Android emulator is running"
 pgrep -xq Docker && echo "Docker Desktop is running"
+pgrep -xq xctrace && echo "An Instruments recording (xctrace) is running"
 true
 
 section "Developer hotspots"
@@ -148,6 +151,54 @@ measure_all /private/tmp/* /private/tmp/claude-"$(id -u)"/*/* | while IFS="$(pri
   [ -n "$(find "$path" -type f -mmin -60 -print -quit 2>/dev/null)" ] && flag="   [changed in the last hour: probably in use]"
   printf '%9s  %s%s\n' "$(gb "$kb")" "$path" "$flag"
 done
+
+# Tools keep working data in the per-user folders under /private/var/folders,
+# and a run that is killed (often because the disk filled up) leaves it behind.
+UT=$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)
+UC=$(getconf DARWIN_USER_CACHE_DIR 2>/dev/null)
+if [ -n "$UT" ] && [ -n "$UC" ]; then
+  section "macOS per-user temp and cache folders (in /private/var/folders)"
+  # Deleting-* folders are simulators that CoreSimulator removes in the
+  # background after `simctl delete`. They are APFS clones, so du overcounts.
+  tmpitems=()
+  for p in "$UT"* "$UC"*; do
+    case "$(basename "$p")" in Deleting-*) continue ;; esac
+    tmpitems+=("$p")
+  done
+  [ ${#tmpitems[@]} -gt 0 ] && measure_all "${tmpitems[@]}" | head -8 | print_sizes
+  deleting=0; busy=0
+  for d in "$UT"Deleting-*; do
+    [ -d "$d" ] || continue
+    deleting=$((deleting + 1))
+    [ -n "$(ls -A "$d" 2>/dev/null)" ] && busy=$((busy + 1))
+  done
+  if [ "$deleting" -gt 0 ]; then
+    echo "$deleting Deleting-* folders: simulators macOS is deleting in the background ($busy not empty yet)."
+    echo "Not measured (APFS clones). Leave them; they empty themselves, and free space catches up gradually."
+  fi
+
+  # Each xctrace run works in path_manager/xrtmp__<pid>.* and Instruments
+  # records into instruments*.ktrace; both should vanish when the run ends.
+  pm="${UC}com.apple.dt.InstrumentsCLI/path_manager"
+  found=""
+  for d in "$pm"/xrtmp__* "$UT"instruments*.ktrace; do [ -e "$d" ] && found=1; done
+  if [ -n "$found" ]; then
+    section "Instruments (xctrace) working data (left behind when a recording is killed)"
+    for d in "$pm"/xrtmp__* "$UT"instruments*.ktrace; do
+      [ -e "$d" ] || continue
+      name=$(basename "$d")
+      state="leftover: nothing is using it"
+      case "$name" in
+        xrtmp__*)
+          pid=$(printf '%s' "$name" | sed 's/^xrtmp__\([0-9]*\)\..*/\1/')
+          ps -p "$pid" >/dev/null 2>&1 && state="in use: xctrace run $pid is active" ;;
+        *)
+          [ -n "$(lsof -t "$d" 2>/dev/null)" ] && state="in use: open in Instruments or Xcode" ;;
+      esac
+      printf '%9s  %s  %s  [%s]\n' "$(gb "$(du -skx "$d" 2>/dev/null | cut -f1)")" "$(mdate "$d")" "$d" "$state"
+    done
+  fi
+fi
 
 if [ $has_simctl = 1 ]; then
   section "Simulator runtimes (size, last used, simulators using it; 'never' = never booted)"

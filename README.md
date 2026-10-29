@@ -10,7 +10,7 @@ Ask your agent something like *"my Mac is almost full"* or *"Xcode is eating my 
 4. **Clean up** only what you picked, using each tool's own command (`xcrun simctl runtime delete`, `brew cleanup`, `npm cache clean`, …) rather than `rm` where one exists.
 5. **Report** the free space before and after, measured, not estimated.
 
-It knows the usual developer hogs: Xcode DerivedData, simulator runtimes and devices, parallel-testing clones, SwiftUI preview simulators, device support files, archives, Android emulators, package caches (npm, Homebrew, SwiftPM, pip, CocoaPods, Gradle, Go, Docker), `node_modules` and other build folders, local AI models. It also covers everyday ones: installers in Downloads, big files, apps you haven't opened in months, and iPhone backups.
+It knows the usual developer hogs: Xcode DerivedData, simulator runtimes and devices, parallel-testing clones, SwiftUI preview simulators, device support files, archives, Instruments (`xctrace`) data left behind by killed recordings, Android emulators, package caches (npm, Homebrew, SwiftPM, pip, CocoaPods, Gradle, Go, Docker), `node_modules` and other build folders, local AI models. It also covers everyday ones: installers in Downloads, big files, apps you haven't opened in months, and iPhone backups.
 
 ## Safety
 
